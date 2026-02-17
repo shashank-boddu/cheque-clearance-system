@@ -166,7 +166,7 @@ export default function Dashboard() {
                 <div key={block.hash} className="px-6 py-4 border-b border-border/50 last:border-0 hover:bg-muted/50 transition-colors">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-mono text-primary">#{block.index}</span>
-                    <span className="text-xs text-muted-foreground">{format(new Date(Number(block.timestamp)), 'HH:mm:ss')}</span>
+                    <span className="text-xs text-muted-foreground">{format(new Date(block.timestamp), 'HH:mm:ss')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
