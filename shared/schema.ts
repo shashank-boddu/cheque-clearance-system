@@ -7,24 +7,35 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  balance: integer("balance").notNull().default(0), // In cents
+  bankName: text("bank_name").notNull(),
   accountNumber: text("account_number").notNull().unique(),
+  ifscCode: text("ifsc_code").notNull(),
+  balance: integer("balance").notNull().default(0), // In paise (to handle INR properly)
 });
 
 export const cheques = pgTable("cheques", {
   id: serial("id").primaryKey(),
+  chequeNumber: text("cheque_number").notNull(),
   payeeName: text("payee_name").notNull(),
-  payerAccountId: integer("payer_account_id").notNull(), // Links to users.id
-  amount: integer("amount").notNull(), // In cents
+  payeeBank: text("payee_bank").notNull(),
+  payerAccountId: integer("payer_account_id").notNull().references(() => users.id),
+  amount: integer("amount").notNull(), // In paise
   imageUrl: text("image_url").notNull(),
-  status: text("status").notNull().default("PENDING"), // PENDING, CLEARED, BOUNCED, FRAUD
+  status: text("status").notNull().default("PENDING"), // PENDING, CLEARED, BOUNCED, CANCELLED
   
   // AI Analysis Results
   signatureScore: integer("signature_score"),
-  tamperStatus: text("tamper_status"), // Low, Medium, High
-  duplicateCheck: text("duplicate_check"), // Passed, Failed
-  riskLevel: text("risk_level"), // Low, Medium, High
+  tamperStatus: text("tamper_status"), // "No Tampering" | "Suspicious Alteration"
+  duplicateCheck: text("duplicate_check"), // "Unique" | "Duplicate Found"
+  riskLevel: text("risk_level"), // "Low" | "Medium" | "High"
+  explanation: text("explanation"),
   
+  // Balance snapshots
+  payerBalanceBefore: integer("payer_balance_before"),
+  payerBalanceAfter: integer("payer_balance_after"),
+  payeeBalanceBefore: integer("payee_balance_before"),
+  payeeBalanceAfter: integer("payee_balance_after"),
+
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -48,7 +59,12 @@ export const insertChequeSchema = createInsertSchema(cheques).omit({
   signatureScore: true,
   tamperStatus: true,
   duplicateCheck: true,
-  riskLevel: true
+  riskLevel: true,
+  explanation: true,
+  payerBalanceBefore: true,
+  payerBalanceAfter: true,
+  payeeBalanceBefore: true,
+  payeeBalanceAfter: true,
 });
 export const insertBlockSchema = createInsertSchema(blocks);
 
@@ -65,13 +81,12 @@ export type InsertBlock = z.infer<typeof insertBlockSchema>;
 
 // API Request/Response Types
 export type CreateChequeRequest = InsertCheque;
-
 export type ChequeResponse = Cheque;
 
 export interface AIAnalysisResult {
   signatureScore: number;
-  tamperStatus: "Low" | "Medium" | "High";
-  duplicateCheck: "Passed" | "Failed";
+  tamperStatus: "No Tampering" | "Suspicious Alteration";
+  duplicateCheck: "Unique" | "Duplicate Found";
   riskLevel: "Low" | "Medium" | "High";
-  explanation?: string;
+  explanation: string;
 }

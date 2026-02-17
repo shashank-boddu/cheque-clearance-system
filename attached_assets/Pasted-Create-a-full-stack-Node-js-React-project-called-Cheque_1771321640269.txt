@@ -1,0 +1,152 @@
+Create a full-stack Node.js + React project called "ChequeClear India" optimized for Replit.
+
+Use Indian banking context and Indian Rupee (₹).
+
+----------------------------------------
+1) Backend (Node.js + Express + MongoDB Atlas)
+----------------------------------------
+
+Implement:
+
+A) Indian Bank Support
+- Support banks like:
+    HDFC Bank
+    State Bank of India (SBI)
+    ICICI Bank
+    Axis Bank
+- Each user must have:
+    name
+    bankName
+    accountNumber
+    IFSC code
+    balance (in INR ₹)
+
+B) Cheque Processing Logic
+
+When cheque is submitted:
+
+1. Capture:
+   - Payer bank
+   - Payee bank
+   - Amount (₹)
+   - Cheque number
+   - Image upload
+   - Date
+
+2. Store:
+   - Payer balance BEFORE transaction
+   - Payee balance BEFORE transaction
+
+3. AI Verification (Simulated but structured):
+Return:
+{
+  signatureScore: number,
+  tamperStatus: "No Tampering" | "Suspicious Alteration",
+  duplicateCheck: "Unique" | "Duplicate Found",
+  riskLevel: "Low" | "Medium" | "High",
+  explanation: string
+}
+
+4. Clearance Rules:
+
+IF:
+- AI riskLevel = High
+→ Status = CANCELLED
+→ Explanation must clearly state reason:
+   "Cheque cancelled due to high fraud risk detected in signature analysis."
+
+IF:
+- Balance < Amount
+→ Status = BOUNCED
+→ Explanation:
+   "Cheque bounced due to insufficient funds in payer's account."
+
+IF:
+- AI riskLevel Low/Medium AND sufficient balance
+→ Status = CLEARED
+→ Deduct amount from payer
+→ Add amount to payee
+
+5. After transaction, store:
+   - Payer balance AFTER
+   - Payee balance AFTER
+
+----------------------------------------
+2) Blockchain Simulation (Custom Node.js Blockchain)
+----------------------------------------
+
+DO NOT use Hardhat or real Ethereum.
+
+Create:
+
+Block:
+- index
+- timestamp
+- transactionData
+- previousHash
+- hash
+
+TransactionData must include:
+- payerName
+- payeeName
+- bankNames
+- amount (₹)
+- status
+- explanation
+- balancesBefore (payer & payee)
+- balancesAfter (payer & payee)
+
+Hash using SHA-256.
+Provide API to fetch all blocks.
+
+----------------------------------------
+3) Frontend (React - Dark Fintech Theme)
+----------------------------------------
+
+Pages:
+
+1) Dashboard
+2) Upload Cheque
+3) Cheque History
+4) Blockchain Explorer
+5) Notifications
+6) Architecture Page
+
+----------------------------------------
+4) Detailed Acceptance/Cancellation Explanation
+----------------------------------------
+
+In cheque details page, clearly display:
+
+- Status Badge (CLEARED / BOUNCED / CANCELLED)
+- Detailed explanation paragraph
+- AI Breakdown:
+    Signature Score %
+    Tamper Detection Result
+    Duplicate Check
+    Risk Level
+- Payer Balance Before & After
+- Payee Balance Before & After
+- Transaction Hash
+- Simulated Gas Fee (₹ value)
+
+Explanation must be professional and detailed.
+
+----------------------------------------
+5) UI Requirements
+----------------------------------------
+
+- Indian Rupee symbol ₹ everywhere
+- Bank logos optional
+- Clean professional banking dashboard
+- Dark theme (deep navy + cyan accents)
+- Cards showing financial flow clearly
+
+----------------------------------------
+
+IMPORTANT:
+- Optimize for Replit
+- Keep code modular
+- Avoid external blockchain nodes
+- No long documentation output
+- Focus on working implementation
