@@ -7,9 +7,9 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  bankName: text("bank_name").notNull(),
+  bankName: text("bank_name").notNull().default("HDFC Bank"),
   accountNumber: text("account_number").notNull().unique(),
-  ifscCode: text("ifsc_code").notNull(),
+  ifscCode: text("ifsc_code").notNull().default("HDFC0001234"),
   balance: integer("balance").notNull().default(0), // In paise (to handle INR properly)
 });
 
