@@ -16,7 +16,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  // Users
   app.get(api.users.list.path, async (req, res) => {
     const users = await storage.getUsers();
     res.json(users);
@@ -28,7 +27,6 @@ export async function registerRoutes(
     res.json(user);
   });
 
-  // Cheques
   app.get(api.cheques.list.path, async (req, res) => {
     const cheques = await storage.getCheques();
     res.json(cheques);
@@ -69,15 +67,15 @@ export async function registerRoutes(
     }
 
     try {
-      // 1. AI Analysis Simulation
-      const prompt = `Analyze a cheque for ₹${cheque.amount / 100} paid to ${cheque.payeeName} at ${cheque.payeeBank}. 
-      Context: Indian Banking System.
-      Return a JSON object with:
-      - signatureScore (0-100)
-      - tamperStatus ("No Tampering" | "Suspicious Alteration")
-      - duplicateCheck ("Unique" | "Duplicate Found")
-      - riskLevel ("Low" | "Medium" | "High")
-      - explanation (brief professional string)`;
+      const prompt = `Analyze a cheque for ₹${(cheque.amount / 100).toLocaleString('en-IN')} paid to ${cheque.payeeName} at ${cheque.payeeBank}. 
+      Return JSON:
+      {
+        "signatureScore": number (0-100),
+        "tamperStatus": "No Tampering" | "Suspicious Alteration",
+        "duplicateCheck": "Unique" | "Duplicate Found",
+        "riskLevel": "Low" | "Medium" | "High",
+        "explanation": "Professional summary including signature anomaly probability and transaction deviation"
+      }`;
 
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-5.1",
@@ -86,69 +84,53 @@ export async function registerRoutes(
       });
 
       const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
+      const signatureScore = analysis.signatureScore || 0;
+      const riskLevel = signatureScore > 80 ? "High" : (signatureScore > 50 ? "Medium" : "Low");
       
-      const signatureScore = analysis.signatureScore || 85;
-      const tamperStatus = analysis.tamperStatus || "No Tampering";
-      const riskLevel = analysis.riskLevel || "Low";
-      const duplicateCheck = analysis.duplicateCheck || "Unique";
-      let explanation = analysis.explanation || "Verification successful.";
-
-      // 2. Logic: Check Balance & Risk
       const payer = await storage.getUser(cheque.payerAccountId);
-      // For payee, we search by name and bank (simulation)
       const allUsers = await storage.getUsers();
       const payee = allUsers.find(u => u.name === cheque.payeeName && u.bankName === cheque.payeeBank);
 
       let newStatus = "CLEARED";
-      
-      if (riskLevel === "High") {
-         newStatus = "CANCELLED";
-         explanation = "Cheque cancelled due to high fraud risk detected in signature analysis.";
+      let explanation = analysis.explanation || "Verification successful.";
+
+      if (signatureScore > 80) {
+        newStatus = "CANCELLED";
+        explanation = `CANCELLED: High Fraud Risk (Score: ${signatureScore}). ${explanation}`;
+      } else if (signatureScore > 50) {
+        newStatus = "ESCROW";
+        explanation = `ESCROW: Requires Admin Approval (Score: ${signatureScore}). ${explanation}`;
       } else if (!payer || payer.balance < cheque.amount) {
-         newStatus = "BOUNCED";
-         explanation = "Cheque bounced due to insufficient funds in payer's account.";
+        newStatus = "CANCELLED";
+        const shortfall = payer ? (cheque.amount - payer.balance) : cheque.amount;
+        explanation = `CANCELLED: Insufficient funds. Available: ₹${((payer?.balance || 0)/100).toLocaleString('en-IN')}, Required: ₹${(cheque.amount/100).toLocaleString('en-IN')}, Shortfall: ₹${(shortfall/100).toLocaleString('en-IN')}.`;
       }
 
-      // Snapshots
       const payerBalanceBefore = payer?.balance || 0;
       const payeeBalanceBefore = payee?.balance || 0;
       let payerBalanceAfter = payerBalanceBefore;
       let payeeBalanceAfter = payeeBalanceBefore;
 
-      // 3. Execute Transaction
       if (newStatus === "CLEARED" && payer && payee) {
-         payerBalanceAfter = payerBalanceBefore - cheque.amount;
-         payeeBalanceAfter = payeeBalanceBefore + cheque.amount;
-
+         payerBalanceAfter -= cheque.amount;
+         payeeBalanceAfter += cheque.amount;
          await storage.updateUserBalance(payer.id, payerBalanceAfter);
          await storage.updateUserBalance(payee.id, payeeBalanceAfter);
          
          const latestBlock = await storage.getLatestBlock();
-         const previousHash = latestBlock ? latestBlock.hash : "0";
-         const nextIndex = latestBlock ? latestBlock.index + 1 : 0;
-         
-         const blockData = {
-            transactionId: `TX-${Date.now()}`,
-            payerName: payer.name,
-            payeeName: payee.name,
-            bankNames: { payer: payer.bankName, payee: payee.bankName },
-            amount: cheque.amount,
-            status: "CLEARED",
-            explanation,
-            balancesBefore: { payer: payerBalanceBefore, payee: payeeBalanceBefore },
-            balancesAfter: { payer: payerBalanceAfter, payee: payeeBalanceAfter }
-         };
-
-         const newBlock = blockchain.createBlock(nextIndex, previousHash, blockData);
+         const newBlock = blockchain.createBlock(
+           (latestBlock?.index || 0) + 1, 
+           latestBlock?.hash || "0", 
+           { transactionId: `TX-${Date.now()}`, payerName: payer.name, payeeName: payee.name, amount: cheque.amount, status: "CLEARED", balances: { before: { payer: payerBalanceBefore, payee: payeeBalanceBefore }, after: { payer: payerBalanceAfter, payee: payeeBalanceAfter } } }
+         );
          await storage.createBlock(newBlock);
       }
 
-      // 4. Update Cheque
       const updatedCheque = await storage.updateCheque(cheque.id, {
         status: newStatus,
         signatureScore,
-        tamperStatus,
-        duplicateCheck,
+        tamperStatus: analysis.tamperStatus || "No Tampering",
+        duplicateCheck: analysis.duplicateCheck || "Unique",
         riskLevel,
         explanation,
         payerBalanceBefore,
@@ -159,50 +141,24 @@ export async function registerRoutes(
       });
 
       res.json(updatedCheque);
-
     } catch (error: any) {
-      console.error("Processing error:", error);
-      res.status(500).json({ message: "Failed to process cheque: " + error.message });
+      res.status(500).json({ message: "Processing failed: " + error.message });
     }
   });
 
-  // Blocks
   app.get(api.blocks.list.path, async (req, res) => {
-    const blocks = await storage.getBlocks();
-    res.json(blocks);
+    res.json(await storage.getBlocks());
   });
   
-  // SEED DATA
   if (process.env.NODE_ENV !== 'production') {
       const users = await storage.getUsers();
       if (users.length === 0) {
-          await storage.createUser({
-              name: "Rajesh Kumar",
-              bankName: "HDFC Bank",
-              accountNumber: "50100234567890",
-              ifscCode: "HDFC0001234",
-              balance: 15000000, // ₹1,50,000.00
-          });
-          await storage.createUser({
-              name: "Priya Sharma",
-              bankName: "State Bank of India (SBI)",
-              accountNumber: "30456789123",
-              ifscCode: "SBIN0004567",
-              balance: 500000, // ₹5,000.00
-          });
-          await storage.createUser({
-              name: "Amit Patel",
-              bankName: "ICICI Bank",
-              accountNumber: "000401234567",
-              ifscCode: "ICIC0000004",
-              balance: 2500000, // ₹25,000.00
-          });
+          await storage.createUser({ name: "Rajesh Kumar", bankName: "SBI", accountNumber: "30456789123", ifscCode: "SBIN0001234", balance: 50000000 });
+          await storage.createUser({ name: "Priya Sharma", bankName: "HDFC Bank", accountNumber: "5010023456", ifscCode: "HDFC0005678", balance: 10000000 });
+          await storage.createUser({ name: "Amit Patel", bankName: "ICICI Bank", accountNumber: "0004012345", ifscCode: "ICIC0009101", balance: 25000000 });
       }
-      
-      const latestBlock = await storage.getLatestBlock();
-      if (!latestBlock) {
-          const genesisBlock = blockchain.createBlock(0, "0", { message: "Genesis Block - ChequeClear India" });
-          await storage.createBlock(genesisBlock);
+      if (!(await storage.getLatestBlock())) {
+          await storage.createBlock(blockchain.createBlock(0, "0", { message: "Genesis Block - RBI Interbank System" }));
       }
   }
 

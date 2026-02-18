@@ -7,10 +7,10 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  bankName: text("bank_name").notNull().default("HDFC Bank"),
+  bankName: text("bank_name").notNull(),
   accountNumber: text("account_number").notNull().unique(),
-  ifscCode: text("ifsc_code").notNull().default("HDFC0001234"),
-  balance: integer("balance").notNull().default(0), // In paise (to handle INR properly)
+  ifscCode: text("ifsc_code").notNull(),
+  balance: integer("balance").notNull().default(0), // In paise
 });
 
 export const cheques = pgTable("cheques", {
@@ -21,13 +21,13 @@ export const cheques = pgTable("cheques", {
   payerAccountId: integer("payer_account_id").notNull().references(() => users.id),
   amount: integer("amount").notNull(), // In paise
   imageUrl: text("image_url").notNull(),
-  status: text("status").notNull().default("PENDING"), // PENDING, CLEARED, BOUNCED, CANCELLED
+  status: text("status").notNull().default("PENDING"), // PENDING, CLEARED, BOUNCED, CANCELLED, ESCROW
   
   // AI Analysis Results
   signatureScore: integer("signature_score"),
-  tamperStatus: text("tamper_status"), // "No Tampering" | "Suspicious Alteration"
-  duplicateCheck: text("duplicate_check"), // "Unique" | "Duplicate Found"
-  riskLevel: text("risk_level"), // "Low" | "Medium" | "High"
+  tamperStatus: text("tamper_status"), 
+  duplicateCheck: text("duplicate_check"), 
+  riskLevel: text("risk_level"), 
   explanation: text("explanation"),
   
   // Balance snapshots
@@ -43,7 +43,7 @@ export const cheques = pgTable("cheques", {
 export const blocks = pgTable("blocks", {
   index: serial("index").primaryKey(),
   timestamp: text("timestamp").notNull(),
-  data: jsonb("data").notNull(), // Stores the transaction details
+  data: jsonb("data").notNull(), 
   previousHash: text("previous_hash").notNull(),
   hash: text("hash").notNull(),
 });
@@ -85,8 +85,8 @@ export type ChequeResponse = Cheque;
 
 export interface AIAnalysisResult {
   signatureScore: number;
-  tamperStatus: "No Tampering" | "Suspicious Alteration";
-  duplicateCheck: "Unique" | "Duplicate Found";
-  riskLevel: "Low" | "Medium" | "High";
+  tamperStatus: string;
+  duplicateCheck: string;
+  riskLevel: string;
   explanation: string;
 }
