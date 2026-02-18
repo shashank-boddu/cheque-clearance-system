@@ -6,7 +6,6 @@ import { blockchain } from "./blockchain";
 import { z } from "zod";
 import { OpenAI } from "openai";
 
-// Initialize OpenAI client
 const openai = new OpenAI({
     apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
     baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
@@ -57,7 +56,6 @@ export async function registerRoutes(
     }
   });
 
-  // Process Cheque (AI + Blockchain Logic)
   app.post(api.cheques.process.path, async (req, res) => {
     const chequeId = Number(req.params.id);
     const cheque = await storage.getCheque(chequeId);
@@ -72,15 +70,14 @@ export async function registerRoutes(
 
     try {
       // 1. AI Analysis Simulation
-      // In a real app, we'd send the image URL to OpenAI's vision model.
-      // Here we'll simulate it or ask OpenAI for a mock analysis based on the payee/amount.
-      
-      const prompt = `Analyze a cheque for ${cheque.amount / 100} USD paid to ${cheque.payeeName}. Return a JSON object with:
+      const prompt = `Analyze a cheque for ₹${cheque.amount / 100} paid to ${cheque.payeeName} at ${cheque.payeeBank}. 
+      Context: Indian Banking System.
+      Return a JSON object with:
       - signatureScore (0-100)
-      - tamperStatus ("Low", "Medium", "High")
-      - duplicateCheck ("Passed", "Failed")
-      - riskLevel ("Low", "Medium", "High")
-      - explanation (brief string)`;
+      - tamperStatus ("No Tampering" | "Suspicious Alteration")
+      - duplicateCheck ("Unique" | "Duplicate Found")
+      - riskLevel ("Low" | "Medium" | "High")
+      - explanation (brief professional string)`;
 
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-5.1",
@@ -90,41 +87,56 @@ export async function registerRoutes(
 
       const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
       
-      // Default fallbacks if AI fails to return proper JSON structure
       const signatureScore = analysis.signatureScore || 85;
-      const tamperStatus = analysis.tamperStatus || "Low";
+      const tamperStatus = analysis.tamperStatus || "No Tampering";
       const riskLevel = analysis.riskLevel || "Low";
-      const duplicateCheck = analysis.duplicateCheck || "Passed";
+      const duplicateCheck = analysis.duplicateCheck || "Unique";
+      let explanation = analysis.explanation || "Verification successful.";
 
       // 2. Logic: Check Balance & Risk
       const payer = await storage.getUser(cheque.payerAccountId);
+      // For payee, we search by name and bank (simulation)
+      const allUsers = await storage.getUsers();
+      const payee = allUsers.find(u => u.name === cheque.payeeName && u.bankName === cheque.payeeBank);
+
       let newStatus = "CLEARED";
       
-      if (!payer) {
-         newStatus = "BOUNCED"; // Should not happen in this controlled env
-      } else if (riskLevel === "High" || tamperStatus === "High" || signatureScore < 50) {
-         newStatus = "FRAUD";
-      } else if (payer.balance < cheque.amount) {
+      if (riskLevel === "High") {
+         newStatus = "CANCELLED";
+         explanation = "Cheque cancelled due to high fraud risk detected in signature analysis.";
+      } else if (!payer || payer.balance < cheque.amount) {
          newStatus = "BOUNCED";
+         explanation = "Cheque bounced due to insufficient funds in payer's account.";
       }
 
+      // Snapshots
+      const payerBalanceBefore = payer?.balance || 0;
+      const payeeBalanceBefore = payee?.balance || 0;
+      let payerBalanceAfter = payerBalanceBefore;
+      let payeeBalanceAfter = payeeBalanceBefore;
+
       // 3. Execute Transaction
-      if (newStatus === "CLEARED" && payer) {
-         // Deduct balance
-         await storage.updateUserBalance(payer.id, payer.balance - cheque.amount);
+      if (newStatus === "CLEARED" && payer && payee) {
+         payerBalanceAfter = payerBalanceBefore - cheque.amount;
+         payeeBalanceAfter = payeeBalanceBefore + cheque.amount;
+
+         await storage.updateUserBalance(payer.id, payerBalanceAfter);
+         await storage.updateUserBalance(payee.id, payeeBalanceAfter);
          
-         // Create Blockchain Block
          const latestBlock = await storage.getLatestBlock();
          const previousHash = latestBlock ? latestBlock.hash : "0";
          const nextIndex = latestBlock ? latestBlock.index + 1 : 0;
          
          const blockData = {
             transactionId: `TX-${Date.now()}`,
-            chequeId: cheque.id,
+            payerName: payer.name,
+            payeeName: payee.name,
+            bankNames: { payer: payer.bankName, payee: payee.bankName },
             amount: cheque.amount,
-            from: payer.accountNumber,
-            to: cheque.payeeName,
-            status: "CLEARED"
+            status: "CLEARED",
+            explanation,
+            balancesBefore: { payer: payerBalanceBefore, payee: payeeBalanceBefore },
+            balancesAfter: { payer: payerBalanceAfter, payee: payeeBalanceAfter }
          };
 
          const newBlock = blockchain.createBlock(nextIndex, previousHash, blockData);
@@ -138,6 +150,11 @@ export async function registerRoutes(
         tamperStatus,
         duplicateCheck,
         riskLevel,
+        explanation,
+        payerBalanceBefore,
+        payerBalanceAfter,
+        payeeBalanceBefore,
+        payeeBalanceAfter,
         processedAt: new Date()
       });
 
@@ -160,21 +177,31 @@ export async function registerRoutes(
       const users = await storage.getUsers();
       if (users.length === 0) {
           await storage.createUser({
-              name: "Alice Corp",
-              balance: 5000000, // $50,000.00
-              accountNumber: "US-1234-5678-9012"
+              name: "Rajesh Kumar",
+              bankName: "HDFC Bank",
+              accountNumber: "50100234567890",
+              ifscCode: "HDFC0001234",
+              balance: 15000000, // ₹1,50,000.00
           });
           await storage.createUser({
-              name: "Bob Enterprises",
-              balance: 250000, // $2,500.00
-              accountNumber: "US-9876-5432-1098"
+              name: "Priya Sharma",
+              bankName: "State Bank of India (SBI)",
+              accountNumber: "30456789123",
+              ifscCode: "SBIN0004567",
+              balance: 500000, // ₹5,000.00
+          });
+          await storage.createUser({
+              name: "Amit Patel",
+              bankName: "ICICI Bank",
+              accountNumber: "000401234567",
+              ifscCode: "ICIC0000004",
+              balance: 2500000, // ₹25,000.00
           });
       }
       
-      // Create Genesis Block if none
       const latestBlock = await storage.getLatestBlock();
       if (!latestBlock) {
-          const genesisBlock = blockchain.createBlock(0, "0", { message: "Genesis Block" });
+          const genesisBlock = blockchain.createBlock(0, "0", { message: "Genesis Block - ChequeClear India" });
           await storage.createBlock(genesisBlock);
       }
   }
